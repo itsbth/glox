@@ -1,67 +1,64 @@
 package scanner
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"unicode"
+)
 
 type TokenType int
 
 const (
 	// Single-character tokens.
-	T_LEFT_PAREN  TokenType = iota
-	T_RIGHT_PAREN           = iota
-	T_LEFT_BRACE            = iota
-	T_RIGHT_BRACE           = iota
-	T_COMMA                 = iota
-	T_DOT                   = iota
-	T_MINUS                 = iota
-	T_PLUS                  = iota
-	T_SEMICOLON             = iota
-	T_SLASH                 = iota
-	T_STAR                  = iota
+	T_LEFT_PAREN TokenType = iota
+	T_RIGHT_PAREN
+	T_LEFT_BRACE
+	T_RIGHT_BRACE
+	T_COMMA
+	T_DOT
+	T_MINUS
+	T_PLUS
+	T_SEMICOLON
+	T_SLASH
+	T_STAR
 
 	// One or two character tokens.
-	T_BANG          = iota
-	T_BANG_EQUAL    = iota
-	T_EQUAL         = iota
-	T_EQUAL_EQUAL   = iota
-	T_GREATER       = iota
-	T_GREATER_EQUAL = iota
-	T_LESS          = iota
-	T_LESS_EQUAL    = iota
+	T_BANG
+	T_BANG_EQUAL
+	T_EQUAL
+	T_EQUAL_EQUAL
+	T_GREATER
+	T_GREATER_EQUAL
+	T_LESS
+	T_LESS_EQUAL
 
 	// Literals.
-	T_IDENTIFIER = iota
-	T_STRING     = iota
-	T_NUMBER     = iota
+	T_IDENTIFIER
+	T_STRING
+	T_NUMBER
 
 	// Keywords.
-	T_AND    = iota
-	T_CLASS  = iota
-	T_ELSE   = iota
-	T_FALSE  = iota
-	T_FUN    = iota
-	T_FOR    = iota
-	T_IF     = iota
-	T_NIL    = iota
-	T_OR     = iota
-	T_PRINT  = iota
-	T_RETURN = iota
-	T_SUPER  = iota
-	T_THIS   = iota
-	T_TRUE   = iota
-	T_VAR    = iota
-	T_WHILE  = iota
+	T_AND
+	T_CLASS
+	T_ELSE
+	T_FALSE
+	T_FUN
+	T_FOR
+	T_IF
+	T_NIL
+	T_OR
+	T_PRINT
+	T_RETURN
+	T_SUPER
+	T_THIS
+	T_TRUE
+	T_VAR
+	T_WHILE
 
-	T_EOF = iota
+	T_EOF
 )
 
-func (t TokenType) String() string {
-	switch t {
-	case T_LEFT_PAREN:
-		return "("
-	default:
-		return "tbd"
-	}
-}
+//go:generate stringer -type=TokenType
 
 // Token is token, yes
 type Token struct {
@@ -69,6 +66,14 @@ type Token struct {
 	lexeme    string
 	literal   interface{}
 	line      int
+}
+
+func (t *Token) Type() TokenType      { return t.tokenType }
+func (t *Token) Lexeme() string       { return t.lexeme }
+func (t *Token) Literal() interface{} { return t.literal }
+
+func (t *Token) String() string {
+	return fmt.Sprintf("Token(%s, %s)", t.tokenType, t.lexeme)
 }
 
 // UnexpectedTokenError is error during scanning, see
@@ -160,6 +165,20 @@ func (s *Scanner) scanToken() {
 			for s.peek() != '\n' && !s.eof() {
 				s.advance()
 			}
+		} else if s.match('*') {
+			lvl := 1
+			for {
+				if s.match('/') && s.match('*') {
+					lvl++
+				} else if s.match('*') && s.match('/') {
+					lvl--
+					if lvl == 0 {
+						break
+					}
+				} else {
+					s.advance()
+				}
+			}
 		} else {
 			s.addToken(T_SLASH)
 		}
@@ -170,6 +189,14 @@ func (s *Scanner) scanToken() {
 	case '"':
 		s.string()
 	default:
+		if unicode.IsDigit(s.last()) {
+			s.number()
+			break
+		}
+		if unicode.IsLetter(s.last()) {
+			s.identifier()
+			break
+		}
 		s.Errors <- fmt.Errorf("unknown character %c", s.last())
 	}
 }
@@ -188,6 +215,62 @@ func (s *Scanner) string() {
 	s.advance()
 	val := string(s.source[s.start+1 : s.current-1])
 	s.addTokenWithLiteral(T_STRING, val)
+}
+
+func (s *Scanner) number() {
+	for unicode.IsDigit(s.peek()) {
+		s.advance()
+	}
+	if s.peek() == '.' && unicode.IsDigit(s.peekNext()) {
+		s.advance()
+		for unicode.IsDigit(s.advance()) {
+		}
+	}
+	val, _ := strconv.ParseFloat(string(s.source[s.start:s.current]), 64)
+	s.addTokenWithLiteral(T_NUMBER, val)
+}
+
+func (s *Scanner) identifier() {
+	for unicode.IsLetter(s.peek()) || unicode.IsDigit(s.peek()) {
+		s.advance()
+	}
+	ident := s.source[s.start:s.current]
+	switch string(ident) {
+	case "and":
+		s.addToken(T_AND)
+	case "class":
+		s.addToken(T_CLASS)
+	case "else":
+		s.addToken(T_ELSE)
+	case "false":
+		s.addToken(T_FALSE)
+	case "for":
+		s.addToken(T_FOR)
+	case "fun":
+		s.addToken(T_FUN)
+	case "if":
+		s.addToken(T_IF)
+	case "nil":
+		s.addToken(T_NIL)
+	case "or":
+		s.addToken(T_OR)
+	case "print":
+		s.addToken(T_PRINT)
+	case "return":
+		s.addToken(T_RETURN)
+	case "super":
+		s.addToken(T_SUPER)
+	case "this":
+		s.addToken(T_IF)
+	case "true":
+		s.addToken(T_TRUE)
+	case "var":
+		s.addToken(T_VAR)
+	case "while":
+		s.addToken(T_WHILE)
+	default:
+		s.addToken(T_IDENTIFIER)
+	}
 }
 
 func (s *Scanner) addToken(token TokenType) {
@@ -214,6 +297,12 @@ func (s *Scanner) peek() rune {
 		return rune(0)
 	}
 	return s.source[s.current]
+}
+func (s *Scanner) peekNext() rune {
+	if s.current+1 >= len(s.source) {
+		return rune(0)
+	}
+	return s.source[s.current+1]
 }
 func (s *Scanner) match(to rune) bool {
 	if s.peek() == to {
